@@ -232,49 +232,63 @@ automaticSuntimesRadio.addEventListener("input", function(event) {
         return setGeolocation()
             .then(() => {
                     // Calculate sunrise/sunset times based on location.
-                    calculateSuntimes().then((suntimes) => {
+                    return calculateSuntimes().then((suntimes) => {
                         changeLogo();
 
                         // Make changes to settings based on calculation results.
-                        browser.storage.local.set({[CHANGE_MODE_KEY]: {mode: "location-suntimes"}});
-                        sunriseInput.disabled = true;
-                        sunsetInput.disabled = true;
+                        return browser.storage.local.set({[CHANGE_MODE_KEY]: {mode: "location-suntimes"}})
+                            .then(() => {
+                                return enableSchemeChangeDetection();
+                            }, onError)
+                            .then(() => {
+                                sunriseInput.disabled = true;
+                                sunsetInput.disabled = true;
 
-                        sunriseInput.value = convertDateToString(suntimes.nextSunrise);
-                        sunsetInput.value = convertDateToString(suntimes.nextSunset);
-                        sunriseInput.dispatchEvent(sunriseInputEvent);
-                        sunsetInput.dispatchEvent(sunsetInputEvent);
-                    });
+                                sunriseInput.value = convertDateToString(suntimes.nextSunrise);
+                                sunsetInput.value = convertDateToString(suntimes.nextSunset);
+                                sunriseInput.dispatchEvent(sunriseInputEvent);
+                                sunsetInput.dispatchEvent(sunsetInputEvent);
+                            }, onError);
+                    }, onError);
                 }, (error) => {
                     onError(error);
                     locationWarning.style.display = "inline";
                     getChangeMode(); // In error, change radio buttons (and settings) back to the way they were, based on storage.
-                    changeThemeBasedOnChangeMode("location-theme");
+                    changeThemeBasedOnChangeMode();
                 });
     }
 });
 
 manualSuntimesRadio.addEventListener("input", function(event) {
     if (manualSuntimesRadio.checked) {
-        browser.storage.local.set({[CHANGE_MODE_KEY]: {mode: "manual-suntimes"}});
         sunriseInput.disabled = false;
         sunsetInput.disabled = false;
-        changeThemeBasedOnChangeMode("manual-suntimes").then(changeLogo);
+        browser.storage.local.set({[CHANGE_MODE_KEY]: {mode: "manual-suntimes"}})
+            .then(() => {
+                return changeThemeBasedOnChangeMode("manual-suntimes");
+            }, onError)
+            .then(() => {
+                return enableSchemeChangeDetection();
+            }, onError)
+            .then(changeLogo, onError);
     }
 });
 
 sysThemeRadio.addEventListener("input", function(event) {
     if (sysThemeRadio.checked) {
-        // browser.browserSettings.overrideContentColorScheme changes the following
-        // about:config to "2", effectively applying a light/dark theme based on the device theme
-        // and allowing the prefers-color-scheme media query to be used to detect the device theme.
-        // The about:config setting is: layout.css.prefers-color-scheme.content-override
-        browser.browserSettings.overrideContentColorScheme.set({value: "system"});
-
-        browser.storage.local.set({[CHANGE_MODE_KEY]: {mode: "system-theme"}});
         sunriseInput.disabled = true;
         sunsetInput.disabled = true;
-        changeThemeBasedOnChangeMode("system-theme").then(changeLogo);
+        setContentColorSchemeToAuto()
+            .then(() => {
+                return browser.storage.local.set({[CHANGE_MODE_KEY]: {mode: "system-theme"}});
+            }, onError)
+            .then(() => {
+                return changeThemeBasedOnChangeMode("system-theme");
+            }, onError)
+            .then(() => {
+                return enableSchemeChangeDetection();
+            }, onError)
+            .then(changeLogo, onError);
     }
 });
 
@@ -402,5 +416,3 @@ resetDefaultBtn.addEventListener("click",
         }
     }
 );
-
-
