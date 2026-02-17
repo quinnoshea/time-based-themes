@@ -127,6 +127,32 @@ function registerSystemThemeMediaListener() {
     systemThemeMediaListenerAttached = true;
 }
 
+function setCurrentThemeSystemColorScheme() {
+    return browser.theme.getCurrent()
+        .then((currentTheme) => {
+            if (!currentTheme.colors) {
+                return;
+            }
+
+            if (!currentTheme.properties) {
+                currentTheme.properties = {};
+            }
+
+            currentTheme.properties.color_scheme = "system";
+            currentTheme.properties.content_color_scheme = "system";
+
+            return browser.theme.update(currentTheme);
+        }, onError);
+}
+
+function clearDynamicThemeOverride() {
+    return browser.theme.reset()
+        .then(() => {
+            if (DEBUG_MODE)
+                console.log("automaticDark DEBUG: Cleared dynamic theme override.");
+        }, onError);
+}
+
 // Things to do when the extension is starting up
 // (or if the settings have been reset).
 function init() {
@@ -399,9 +425,12 @@ function enableSchemeChangeDetection() {
     return browser.storage.local.get(CHANGE_MODE_KEY)
         .then((obj) => {
             if (obj[CHANGE_MODE_KEY].mode === "system-theme") {
-                return setContentColorSchemeToAuto();
+                return setContentColorSchemeToAuto()
+                    .then(() => {
+                        return setCurrentThemeSystemColorScheme();
+                    }, onError);
             }
-            return Promise.resolve();
+            return clearDynamicThemeOverride();
         }, onError)
         .then(() => {
             detect_scheme_change_block = false;
