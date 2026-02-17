@@ -10,8 +10,8 @@
 
   "manifest_version": 2,
   "name": "automaticDark - Time-Based Theme Changer",
-  "version": "1.4.2",
-  "homepage_url": "https://github.com/skhzhang/time-based-themes/",
+  "version": "1.4.3",
+  "homepage_url": "https://github.com/quinnoshea/time-based-themes/",
   "description": "Automatically change Firefox's theme based on the time",
 
   "icons": {
