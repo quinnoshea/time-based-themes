@@ -144,6 +144,10 @@ function changeThemeBasedOnChangeMode(mode) {
 
     return resolvedModePromise
         .then((resolvedMode) => {
+            if (!resolvedMode) {
+                resolvedMode = DEFAULT_CHANGE_MODE;
+            }
+
             if (DEBUG_MODE)
                 console.log("automaticDark DEBUG: 50 changeThemeBasedOnChangeMode - Mode is set to: " + resolvedMode);
 
@@ -239,8 +243,24 @@ function checkTime() {
 
     return browser.storage.local.get([SUNRISE_TIME_KEY, SUNSET_TIME_KEY])
         .then((obj) => {
-            let sunriseSplit = obj[SUNRISE_TIME_KEY].time.split(":");
-            let sunsetSplit = obj[SUNSET_TIME_KEY].time.split(":");
+            const sunriseValue = obj[SUNRISE_TIME_KEY] && obj[SUNRISE_TIME_KEY].time;
+            const sunsetValue = obj[SUNSET_TIME_KEY] && obj[SUNSET_TIME_KEY].time;
+
+            if (!sunriseValue || !sunsetValue) {
+                if (DEBUG_MODE)
+                    console.log("automaticDark DEBUG: checkTime - Missing sunrise/sunset values. Reapplying defaults.");
+
+                return setStorage({
+                        [SUNRISE_TIME_KEY]: {time: DEFAULT_SUNRISE_TIME},
+                        [SUNSET_TIME_KEY]: {time: DEFAULT_SUNSET_TIME}
+                    })
+                    .then(() => {
+                        return checkTime();
+                    }, onError);
+            }
+
+            let sunriseSplit = sunriseValue.split(":");
+            let sunsetSplit = sunsetValue.split(":");
 
             if (timeInBetween(
                     hours, minutes, 
@@ -265,31 +285,90 @@ function checkTime() {
         }, onError);
 }
 
+function getFallbackThemeId(themeKey) {
+    if (themeKey === NIGHTTIME_THEME_KEY) {
+        return DEFAULT_NIGHTTIME_THEME;
+    }
+
+    return DEFAULT_DAYTIME_THEME;
+}
+
+function resolveThemeRecord(theme, themeKey) {
+    const themeRecord = theme && theme[themeKey];
+    if (!isEmpty(themeRecord) && themeRecord.themeId) {
+        return Promise.resolve(themeRecord);
+    }
+
+    if (DEBUG_MODE)
+        console.log("automaticDark DEBUG: Missing theme record for key: " + themeKey + ". Using fallback.");
+
+    return setDefaultThemes()
+        .then(() => {
+            const fallbackThemeId = getFallbackThemeId(themeKey);
+            if (!fallbackThemeId) {
+                onError("No fallback theme available for key: " + themeKey);
+                return null;
+            }
+
+            return browser.storage.local.set({[themeKey]: {themeId: fallbackThemeId}})
+                .then(() => {
+                    return {themeId: fallbackThemeId};
+                }, onError);
+        }, onError);
+}
+
 // Parse the object given and enable the theme.if it is not
 // already enabled.
-function enableTheme(theme, themeKey) {
+function enableTheme(theme, themeKey, hasRetriedFallback = false) {
     if (DEBUG_MODE)
         console.log("automaticDark DEBUG: Start enableTheme");
 
-    theme = theme[themeKey];
-    return browser.management.get(theme.themeId)
-        .then((extInfo) => {
-            if (!extInfo.enabled) {
-                if (DEBUG_MODE)
-                    console.log("automaticDark DEBUG: 100 enableTheme - Enabled theme " + theme.themeId);
-                setSchemeChangeDetectionBlock(true);
-                return browser.management.setEnabled(theme.themeId, true)
-                    .then(() => {
-                        return enableSchemeChangeDetection();
-                    }, (error) => {
-                        setSchemeChangeDetectionBlock(false);
+    return resolveThemeRecord(theme, themeKey)
+        .then((themeRecord) => {
+            if (!themeRecord || !themeRecord.themeId) {
+                return;
+            }
+
+            return browser.management.get(themeRecord.themeId)
+                .then((extInfo) => {
+                    if (!extInfo.enabled) {
+                        if (DEBUG_MODE)
+                            console.log("automaticDark DEBUG: 100 enableTheme - Enabled theme " + themeRecord.themeId);
+                        setSchemeChangeDetectionBlock(true);
+                        return browser.management.setEnabled(themeRecord.themeId, true)
+                            .then(() => {
+                                return enableSchemeChangeDetection();
+                            }, (error) => {
+                                setSchemeChangeDetectionBlock(false);
+                                onError(error);
+                            });
+                    }
+
+                    if (DEBUG_MODE)
+                        console.log("automaticDark DEBUG: 100 enableTheme - " + themeRecord.themeId + " is already enabled.");
+                }, (error) => {
+                    if (hasRetriedFallback) {
                         onError(error);
-                    });
-            }
-            else {
-                if (DEBUG_MODE)
-                    console.log("automaticDark DEBUG: 100 enableTheme - " + theme.themeId + " is already enabled.");
-            }
+                        return;
+                    }
+
+                    if (DEBUG_MODE)
+                        console.log("automaticDark DEBUG: Theme not available: " + themeRecord.themeId + ". Retrying with fallback.");
+
+                    return setDefaultThemes()
+                        .then(() => {
+                            const fallbackThemeId = getFallbackThemeId(themeKey);
+                            if (!fallbackThemeId || fallbackThemeId === themeRecord.themeId) {
+                                onError(error);
+                                return;
+                            }
+
+                            return browser.storage.local.set({[themeKey]: {themeId: fallbackThemeId}})
+                                .then(() => {
+                                    return enableTheme({[themeKey]: {themeId: fallbackThemeId}}, themeKey, true);
+                                }, onError);
+                        }, onError);
+                });
         }, onError);
 }
 
@@ -301,6 +380,9 @@ function enableTheme(theme, themeKey) {
 function setDefaultThemes() {
     if (DEBUG_MODE)
         console.log("automaticDark DEBUG: Start setDefaultThemes");
+
+    DEFAULT_DAYTIME_THEME = "";
+    DEFAULT_NIGHTTIME_THEME = "";
 
     // Iterate through each theme.
     return browser.management.getAll()

@@ -56,26 +56,31 @@ function setStorage(obj, overrideDefault = false) {
     if (DEBUG_MODE)
         console.log("automaticDark DEBUG: Start setStorage");
 
-    for (let item in obj) {
-        browser.storage.local.get(item)
-            .then((fetchedItem) => {
-                if (overrideDefault || isEmpty(fetchedItem)) {
-                    return browser.storage.local.set(obj)
-                        .then((obj) => {}, onError);
-                    }
-            }, onError);
+    const keys = Object.keys(obj);
+    if (keys.length === 0) {
+        return Promise.resolve({});
     }
 
-    return browser.storage.local.get(Object.keys(obj))
-        .then((items) => {
-            // Only set storage if a value is not already set,
-            // or if it is already empty.
-            if (overrideDefault || isEmpty(items)) {
-                return browser.storage.local.set(obj)
-                    .then((obj) => {
-                        console.log(obj);
-                    }, onError);
+    return browser.storage.local.get(keys)
+        .then((storedItems) => {
+            const updates = {};
+
+            for (let key of keys) {
+                const existingValue = storedItems[key];
+                const isInvalidShape = existingValue !== undefined && existingValue !== null && typeof existingValue !== "object";
+                if (overrideDefault || isEmpty(existingValue) || isInvalidShape) {
+                    updates[key] = obj[key];
+                }
             }
+
+            if (isEmpty(updates)) {
+                return storedItems;
+            }
+
+            return browser.storage.local.set(updates)
+                .then(() => {
+                    return browser.storage.local.get(keys);
+                }, onError);
         }, onError);
 }
 
@@ -100,8 +105,16 @@ function onError(error) {
 
 // Helper: Check if the object is empty.
 function isEmpty(obj) {
-    for(var key in obj) {
-        if(obj.hasOwnProperty(key))
+    if (obj === null || obj === undefined) {
+        return true;
+    }
+
+    if (typeof obj !== "object") {
+        return false;
+    }
+
+    for (var key in obj) {
+        if (obj.hasOwnProperty(key))
             return false;
     }
     return true;
