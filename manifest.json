@@ -1,7 +1,10 @@
 {
   "browser_specific_settings": {
     "gecko": {
-      "id": "{9ed7d361-ccd9-4cad-9846-977da2651fb5}"
+      "id": "automaticdark-fork@quinnoshea.dev",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   },
 
